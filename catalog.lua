@@ -98,6 +98,45 @@ do
     })
 
     Tabs.Main:AddButton({
+        Title = "🎭 Copiar Outfit",
+        Description = "Copia o outfit do jogador selecionado",
+        Callback = function()
+            local p = Players:FindFirstChild(Options.PlayerDropdown.Value)
+            if p and p.Character then
+                local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    local desc = hum:GetAppliedDescription()
+                    local dict = CatalogModule:ToDictionary(desc)
+                    dict.BodyBackAccessory = ""
+                    dict.BodyFrontAccessory = ""
+                    dict.BodyLeftAccessory = ""
+                    dict.BodyRightAccessory = ""
+                    dict.BodyBottomAccessory = ""
+                    dict.BodyTopAccessory = ""
+                    local success, err = pcall(function()
+                        ReplicatedStorage.CatalogGuiRemote:InvokeServer({
+                            Action = "CreateAndWearHumanoidDescription",
+                            Properties = dict,
+                            RigType = hum.RigType
+                        })
+                    end)
+                    if success then
+                        Fluent:Notify({ Title = "✅ Sucesso", Content = "Outfit copiado de " .. p.Name, Duration = 4 })
+                    else
+                        Fluent:Notify({ Title = "Erro", Content = "Falha ao copiar outfit: " .. tostring(err), Duration = 4 })
+                    end
+                else
+                    Fluent:Notify({ Title = "Erro", Content = "Humanoid não encontrado!", Duration = 4 })
+                end
+            else
+                Fluent:Notify({ Title = "Erro", Content = "Jogador ou personagem não encontrado!", Duration = 4 })
+            end
+        end
+    })
+
+
+    
+    Tabs.Main:AddButton({
         Title = "🔁 Atualizar Lista",
         Description = "Recarrega a lista de jogadores",
         Callback = function()
@@ -125,43 +164,6 @@ do
                         Fluent:Notify({ Title = "🔍 Preview", Content = "Visualizando outfit de " .. p.Name, Duration = 4 })
                     else
                         Fluent:Notify({ Title = "Erro", Content = "Falha ao visualizar: " .. tostring(err), Duration = 4 })
-                    end
-                else
-                    Fluent:Notify({ Title = "Erro", Content = "Humanoid não encontrado!", Duration = 4 })
-                end
-            else
-                Fluent:Notify({ Title = "Erro", Content = "Jogador ou personagem não encontrado!", Duration = 4 })
-            end
-        end
-    })
-
-    Tabs.Main:AddButton({
-        Title = "🎭 Copiar Outfit",
-        Description = "Copia o outfit do jogador selecionado",
-        Callback = function()
-            local p = Players:FindFirstChild(Options.PlayerDropdown.Value)
-            if p and p.Character then
-                local hum = p.Character:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    local desc = hum:GetAppliedDescription()
-                    local dict = CatalogModule:ToDictionary(desc)
-                    dict.BodyBackAccessory = ""
-                    dict.BodyFrontAccessory = ""
-                    dict.BodyLeftAccessory = ""
-                    dict.BodyRightAccessory = ""
-                    dict.BodyBottomAccessory = ""
-                    dict.BodyTopAccessory = ""
-                    local success, err = pcall(function()
-                        ReplicatedStorage.CatalogGuiRemote:InvokeServer({
-                            Action = "CreateAndWearHumanoidDescription",
-                            Properties = dict,
-                            RigType = hum.RigType
-                        })
-                    end)
-                    if success then
-                        Fluent:Notify({ Title = "✅ Sucesso", Content = "Outfit copiado de " .. p.Name, Duration = 4 })
-                    else
-                        Fluent:Notify({ Title = "Erro", Content = "Falha ao copiar outfit: " .. tostring(err), Duration = 4 })
                     end
                 else
                     Fluent:Notify({ Title = "Erro", Content = "Humanoid não encontrado!", Duration = 4 })
