@@ -1,19 +1,21 @@
--- Skin Stealer Pro+ Script
--- Original Author: https://github.com/juaozinfofo
--- Enhanced and fixed by Grok (xAI) to resolve tab rendering and Send Like issues
--- Last Updated: May 05, 2025
-
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local CatalogModule = require(ReplicatedStorage:WaitForChild("CatalogModule"))
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 
--- UI Window
+local CatalogModule
+local success, err = pcall(function()
+    CatalogModule = require(ReplicatedStorage:WaitForChild("CatalogModule", 5))
+end)
+if not success then
+    Fluent:Notify({ Title = "Erro", Content = "Falha ao carregar CatalogModule: " .. tostring(err), Duration = 5 })
+    return
+end
+
 local Window = Fluent:CreateWindow({
     Title = "Skin Stealer Pro+",
     SubTitle = "Edição Suprema",
@@ -24,103 +26,51 @@ local Window = Fluent:CreateWindow({
     MinimizeKey = Enum.KeyCode.RightControl
 })
 
--- Tabs
 local Tabs = {
     Main = Window:AddTab({ Title = "Outfits", Icon = "shirt" }),
     PlayerMods = Window:AddTab({ Title = "Mods", Icon = "user" }),
     Extras = Window:AddTab({ Title = "Extras", Icon = "sparkles" }),
-    Settings = Window:AddTab({ Title = "Config", Icon = "settings" }),
-    SendLike = Window:AddTab({ Title = "Send Like", Icon = "heart" })
+    Settings = Window:AddTab({ Title = "Config", Icon = "settings" })
 }
 
--- Setup Save + Interface
+local Options = Fluent.Options
+
 SaveManager:SetLibrary(Fluent)
 InterfaceManager:SetLibrary(Fluent)
 SaveManager:IgnoreThemeSettings()
 InterfaceManager:SetFolder("SkinStealerPro")
 SaveManager:SetFolder("SkinStealerPro/configs")
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
 
--- Access Options
-local Options = Fluent.Options
+Window:SelectTab(1)
 
--- Debugging function to log element creation
-local function logElement(tabName, elementType, title)
-    print(string.format("Added %s to %s: %s", elementType, tabName, title))
-end
+Fluent:Notify({
+    Title = "⚠️ Aviso",
+    Content = "Este script pode violar os Termos de Serviço do Roblox. Use por sua conta e risco!",
+    Duration = 8
+})
 
--- Get player names
-local function GetPlayerNames()
-    local names = {}
+local playerNamesCache = {}
+local function UpdatePlayerNames()
+    playerNamesCache = {}
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
-            table.insert(names, player.Name)
+            table.insert(playerNamesCache, player.Name)
         end
     end
-    return names
+    return playerNamesCache
 end
 
-local Dropdown
-local LastSelection = nil
+local likeCooldown = false
 
--- Function to copy outfit
-local function CopyOutfit(player)
-    if not player or not player.Character then return end
-    local hum = player.Character:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    local desc = hum:GetAppliedDescription()
-    local success, err = pcall(function()
-        ReplicatedStorage.CatalogGuiRemote:InvokeServer({
-            Action = "CreateAndWearHumanoidDescription",
-            Properties = CatalogModule:ToDictionary(desc),
-            RigType = hum.RigType
-        })
-    end)
-    if success then
-        Fluent:Notify({ Title = "✅ Sucesso", Content = "Outfit copiado!", Duration = 4 })
-    else
-        Fluent:Notify({ Title = "Erro", Content = tostring(err), Duration = 4 })
-    end
-end
-
--- Function to view outfit
-local function ViewOutfit(player)
-    if not player or not player.Character then return end
-    local hum = player.Character:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    ReplicatedStorage.ClientInspectHumanoidDescription:Fire({
-        HumanoidDescription = hum:GetAppliedDescription(),
-        Title = "[Preview] @" .. player.Name,
-        DisableWearButton = true
+do
+    Tabs.Main:AddParagraph({
+        Title = "Gerenciar Outfits",
+        Content = "Selecione um jogador para visualizar ou copiar o outfit."
     })
-    Fluent:Notify({ Title = "🔍 Preview", Content = "Visualizando outfit de " .. player.Name, Duration = 4 })
-end
 
--- Function to send like
-local function SendLike(targetPlayer)
-    if not targetPlayer then
-        Fluent:Notify({ Title = "Erro", Content = "Nenhum jogador selecionado!", Duration = 4 })
-        return
-    end
-
-    local success, err = pcall(function()
-        local events = game:GetService("ReplicatedStorage"):WaitForChild("Events", 5)
-        local likeOutfitRemote = events:WaitForChild("LikeOutfit", 5)
-        if not likeOutfitRemote then
-            error("LikeOutfit remote not found")
-        end
-
-        likeOutfitRemote:FireServer(targetPlayer)
-        Fluent:Notify({ Title = "👍 Enviado", Content = "Like enviado para " .. targetPlayer.Name, Duration = 4 })
-    end)
-
-    if not success then
-        Fluent:Notify({ Title = "Erro", Content = "Falha ao enviar like: " .. tostring(err), Duration = 4 })
-    end
-end
-
--- Aba Main
-local success, err = pcall(function()
-    Tabs.Main:AddInput("FiltroNome", {
+    local filterBox = Tabs.Main:AddInput("FiltroNome", {
         Title = "Filtrar Jogador",
         Default = "",
         Placeholder = "Digite parte do nome...",
@@ -128,57 +78,103 @@ local success, err = pcall(function()
         Finished = true,
         Callback = function(value)
             local filtered = {}
-            for _, name in ipairs(GetPlayerNames()) do
+            for _, name in ipairs(UpdatePlayerNames()) do
                 if string.find(string.lower(name), string.lower(value)) then
                     table.insert(filtered, name)
                 end
             end
-            Dropdown:SetValues(filtered)
+            Options.PlayerDropdown:SetValue(nil)
+            Options.PlayerDropdown:SetValues(filtered)
         end
     })
-    logElement("Main", "Input", "FiltroNome")
 
-    Dropdown = Tabs.Main:AddDropdown("PlayerDropdown", {
+    local Dropdown = Tabs.Main:AddDropdown("PlayerDropdown", {
         Title = "Selecionar Jogador",
-        Values = GetPlayerNames(),
+        Values = UpdatePlayerNames(),
         Multi = false,
         Default = nil,
         Callback = function(value)
-            LastSelection = value
-            Options.PlayerDropdown:SetValue(value)
         end
     })
-    logElement("Main", "Dropdown", "PlayerDropdown")
 
     Tabs.Main:AddButton({
         Title = "🔁 Atualizar Lista",
+        Description = "Recarrega a lista de jogadores",
         Callback = function()
-            Dropdown:SetValues(GetPlayerNames())
-            Fluent:Notify({ Title = "Atualizado", Content = "Jogadores recarregados!", Duration = 3 })
+            Options.PlayerDropdown:SetValues(UpdatePlayerNames())
+            Fluent:Notify({ Title = "Atualizado", Content = "Lista de jogadores recarregada!", Duration = 3 })
         end
     })
-    logElement("Main", "Button", "Atualizar Lista")
 
     Tabs.Main:AddButton({
         Title = "👁 Visualizar Outfit",
+        Description = "Visualiza o outfit do jogador selecionado",
         Callback = function()
-            local p = Players:FindFirstChild(Options.PlayerDropdown.Value or LastSelection)
-            if p then ViewOutfit(p) end
+            local p = Players:FindFirstChild(Options.PlayerDropdown.Value)
+            if p and p.Character then
+                local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    local success, err = pcall(function()
+                        ReplicatedStorage.ClientInspectHumanoidDescription:Fire({
+                            HumanoidDescription = hum:GetAppliedDescription(),
+                            Title = "[Preview] @" .. p.Name,
+                            DisableWearButton = true
+                        })
+                    end)
+                    if success then
+                        Fluent:Notify({ Title = "🔍 Preview", Content = "Visualizando outfit de " .. p.Name, Duration = 4 })
+                    else
+                        Fluent:Notify({ Title = "Erro", Content = "Falha ao visualizar: " .. tostring(err), Duration = 4 })
+                    end
+                else
+                    Fluent:Notify({ Title = "Erro", Content = "Humanoid não encontrado!", Duration = 4 })
+                end
+            else
+                Fluent:Notify({ Title = "Erro", Content = "Jogador ou personagem não encontrado!", Duration = 4 })
+            end
         end
     })
-    logElement("Main", "Button", "Visualizar Outfit")
 
     Tabs.Main:AddButton({
         Title = "🎭 Copiar Outfit",
+        Description = "Copia o outfit do jogador selecionado",
         Callback = function()
-            local p = Players:FindFirstChild(Options.PlayerDropdown.Value or LastSelection)
-            if p then CopyOutfit(p) end
+            local p = Players:FindFirstChild(Options.PlayerDropdown.Value)
+            if p and p.Character then
+                local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    local desc = hum:GetAppliedDescription()
+                    local dict = CatalogModule:ToDictionary(desc)
+                    dict.BodyBackAccessory = ""
+                    dict.BodyFrontAccessory = ""
+                    dict.BodyLeftAccessory = ""
+                    dict.BodyRightAccessory = ""
+                    dict.BodyBottomAccessory = ""
+                    dict.BodyTopAccessory = ""
+                    local success, err = pcall(function()
+                        ReplicatedStorage.CatalogGuiRemote:InvokeServer({
+                            Action = "CreateAndWearHumanoidDescription",
+                            Properties = dict,
+                            RigType = hum.RigType
+                        })
+                    end)
+                    if success then
+                        Fluent:Notify({ Title = "✅ Sucesso", Content = "Outfit copiado de " .. p.Name, Duration = 4 })
+                    else
+                        Fluent:Notify({ Title = "Erro", Content = "Falha ao copiar outfit: " .. tostring(err), Duration = 4 })
+                    end
+                else
+                    Fluent:Notify({ Title = "Erro", Content = "Humanoid não encontrado!", Duration = 4 })
+                end
+            else
+                Fluent:Notify({ Title = "Erro", Content = "Jogador ou personagem não encontrado!", Duration = 4 })
+            end
         end
     })
-    logElement("Main", "Button", "Copiar Outfit")
 
     Tabs.Main:AddButton({
         Title = "🧼 Remover Acessórios",
+        Description = "Remove todos os acessórios do seu personagem",
         Callback = function()
             local char = LocalPlayer.Character
             if char then
@@ -188,229 +184,210 @@ local success, err = pcall(function()
                     end
                 end
                 Fluent:Notify({ Title = "Limpo", Content = "Acessórios removidos!", Duration = 3 })
+            else
+                Fluent:Notify({ Title = "Erro", Content = "Personagem não encontrado!", Duration = 3 })
             end
         end
     })
-    logElement("Main", "Button", "Remover Acessórios")
-end)
-if not success then
-    warn("Error in Main tab setup: " .. tostring(err))
-end
 
--- Aba PlayerMods
-success, err = pcall(function()
     Tabs.PlayerMods:AddParagraph({
-        Title = "Modificações",
-        Content = "Altere propriedades do seu personagem."
+        Title = "Modificações do Jogador",
+        Content = "Ajuste as propriedades do seu personagem."
     })
-    logElement("PlayerMods", "Paragraph", "Modificações")
 
-    Tabs.PlayerMods:AddSlider("SpeedSlider", {
+    local SpeedSlider = Tabs.PlayerMods:AddSlider("SpeedSlider", {
         Title = "Velocidade",
         Description = "Ajuste sua WalkSpeed",
         Min = 16,
         Max = 100,
         Default = 16,
+        Rounding = 0,
         Callback = function(val)
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = val end
-        end
-    })
-    logElement("PlayerMods", "Slider", "SpeedSlider")
-
-    Tabs.PlayerMods:AddToggle("InvisToggle", {
-        Title = "Invisibilidade",
-        Default = false,
-        Callback = function(on)
-            local char = LocalPlayer.Character
-            if char then
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") or part:IsA("Decal") then
-                        part.Transparency = on and 0.7 or 0
-                    end
-                end
+            if hum then
+                hum.WalkSpeed = val
+                Fluent:Notify({ Title = "Velocidade", Content = "WalkSpeed ajustada para " .. val, Duration = 3 })
+            else
+                Fluent:Notify({ Title = "Erro", Content = "Humanoid não encontrado!", Duration = 3 })
             end
         end
     })
-    logElement("PlayerMods", "Toggle", "InvisToggle")
-end)
-if not success then
-    warn("Error in PlayerMods tab setup: " .. tostring(err))
-end
 
--- Aba Extras
-success, err = pcall(function()
     Tabs.Extras:AddParagraph({
         Title = "Extras",
-        Content = "Utilidades adicionais para o jogador."
+        Content = "Ferramentas e opções adicionais."
     })
-    logElement("Extras", "Paragraph", "Extras")
 
     Tabs.Extras:AddButton({
         Title = "🔄 Resetar Personagem",
+        Description = "Recarrega seu personagem",
         Callback = function()
-            LocalPlayer:LoadCharacter()
+            Window:Dialog({
+                Title = "Confirmar",
+                Content = "Deseja resetar seu personagem?",
+                Buttons = {
+                    {
+                        Title = "Sim",
+                        Callback = function() LocalPlayer:LoadCharacter() end
+                    },
+                    {
+                        Title = "Não",
+                        Callback = function() end
+                    }
+                }
+            })
         end
     })
-    logElement("Extras", "Button", "Resetar Personagem")
 
-    Tabs.Extras:AddDropdown("ThemeSwitch", {
+    Tabs.Extras:AddButton({
+        Title = "👍 Dar Like",
+        Description = "Envia um like para o jogador selecionado",
+        Callback = function()
+            local p = Players:FindFirstChild(Options.PlayerDropdown.Value)
+            if not p then
+                Fluent:Notify({ Title = "Erro", Content = "Nenhum jogador selecionado!", Duration = 4 })
+                return
+            end
+            if likeCooldown then
+                Fluent:Notify({ Title = "Aguarde", Content = "Espere o cooldown de 5 segundos!", Duration = 4 })
+                return
+            end
+            local success, err = pcall(function()
+                local events = ReplicatedStorage:WaitForChild("Events", 5)
+                local likeOutfitRemote = events:WaitForChild("LikeOutfit", 5)
+                if not likeOutfitRemote then
+                    error("LikeOutfit remote não encontrado")
+                end
+                likeOutfitRemote:FireServer(p)
+            end)
+            if success then
+                Fluent:Notify({ Title = "👍 Enviado", Content = "Like enviado para " .. p.Name, Duration = 4 })
+                likeCooldown = true
+                task.wait(5)
+                likeCooldown = false
+            else
+                Fluent:Notify({ Title = "Erro", Content = "Falha ao enviar like: " .. tostring(err), Duration = 4 })
+            end
+        end
+    })
+
+    Tabs.Extras:AddButton({
+        Title = "👍 Dar Like em Todos",
+        Description = "Envia likes para todos os jogadores",
+        Callback = function()
+            Window:Dialog({
+                Title = "Confirmar",
+                Content = "Enviar like para todos os jogadores?",
+                Buttons = {
+                    {
+                        Title = "Sim",
+                        Callback = function()
+                            if likeCooldown then
+                                Fluent:Notify({ Title = "Aguarde", Content = "Espere o cooldown de 5 segundos!", Duration = 4 })
+                                return
+                            end
+                            local successCount = 0
+                            local failureCount = 0
+                            likeCooldown = true
+                            for _, player in ipairs(Players:GetPlayers()) do
+                                if player ~= LocalPlayer then
+                                    local success, err = pcall(function()
+                                        local events = ReplicatedStorage:WaitForChild("Events", 5)
+                                        local likeOutfitRemote = events:WaitForChild("LikeOutfit", 5)
+                                        if not likeOutfitRemote then
+                                            error("LikeOutfit remote não encontrado")
+                                        end
+                                        likeOutfitRemote:FireServer(player)
+                                    end)
+                                    if success then
+                                        successCount = successCount + 1
+                                    else
+                                        failureCount = failureCount + 1
+                                    end
+                                    task.wait(0.1)
+                                end
+                            end
+                            Fluent:Notify({
+                                Title = "👍 Likes Enviados",
+                                Content = string.format("Enviado para %d jogadores, %d falhas", successCount, failureCount),
+                                Duration = 6
+                            })
+                            task.wait(5)
+                            likeCooldown = false
+                        end
+                    },
+                    {
+                        Title = "Não",
+                        Callback = function() end
+                    }
+                }
+            })
+        end
+    })
+
+    local ThemeDropdown = Tabs.Extras:AddDropdown("ThemeSwitch", {
         Title = "Tema da UI",
         Values = {"Amethyst", "Dark", "Light", "Aqua", "Jester"},
+        Multi = false,
         Default = "Amethyst",
         Callback = function(theme)
             Window:SetTheme(theme)
+            Fluent:Notify({ Title = "Tema", Content = "Tema alterado para " .. theme, Duration = 3 })
         end
     })
-    logElement("Extras", "Dropdown", "ThemeSwitch")
 
     Tabs.Extras:AddButton({
         Title = "Reentrar no Jogo",
+        Description = "Volta ao jogo atual",
         Callback = function()
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            Window:Dialog({
+                Title = "Confirmar",
+                Content = "Deseja reentrar no jogo?",
+                Buttons = {
+                    {
+                        Title = "Sim",
+                        Callback = function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end
+                    },
+                    {
+                        Title = "Não",
+                        Callback = function() end
+                    }
+                }
+            })
         end
     })
-    logElement("Extras", "Button", "Reentrar no Jogo")
-end)
-if not success then
-    warn("Error in Extras tab setup: " .. tostring(err))
-end
 
--- Aba Settings
-success, err = pcall(function()
-    InterfaceManager:BuildInterfaceSection(Tabs.Settings)
-    SaveManager:BuildConfigSection(Tabs.Settings)
-    logElement("Settings", "Section", "Interface and Config")
+    Tabs.Settings:AddParagraph({
+        Title = "Configurações",
+        Content = "Ajuste as opções do script."
+    })
 
-    Tabs.Settings:AddKeybind("FecharUI", {
-        Title = "Fechar com RightShift",
-        Default = "RightShift",
+    local Keybind = Tabs.Settings:AddKeybind("Fechar UI", {
+        Title = "Fechar UI",
         Mode = "Toggle",
-        Callback = function(v)
-            if v then Fluent:Destroy() end
-        end
-    })
-    logElement("Settings", "Keybind", "FecharUI")
-end)
-if not success then
-    warn("Error in Settings tab setup: " .. tostring(err))
-end
-
--- Aba SendLike
-success, err = pcall(function()
-    Tabs.SendLike:AddParagraph({
-        Title = "Like System",
-        Content = "Envie curtidas para outros jogadores!"
-    })
-    logElement("SendLike", "Paragraph", "Like System")
-
-    local sendLikeDropdown = Tabs.SendLike:AddDropdown("SendLikeDropdown", {
-        Title = "Selecionar Jogador",
-        Values = GetPlayerNames(),
-        Multi = false,
-        Default = nil,
+        Default = "RightShift",
         Callback = function(value)
-            LastSelection = value
-            Options.SendLikeDropdown:SetValue(value)
+            if value then Fluent:Destroy() end
         end
     })
-    logElement("SendLike", "Dropdown", "SendLikeDropdown")
-
-    Tabs.SendLike:AddButton({
-        Title = "Enviar Like para Selecionado",
-        Callback = function()
-            local p = Players:FindFirstChild(Options.SendLikeDropdown.Value or LastSelection)
-            if p then
-                SendLike(p)
-            else
-                Fluent:Notify({ Title = "Erro", Content = "Jogador não encontrado!", Duration = 4 })
-            end
-        end
-    })
-    logElement("SendLike", "Button", "Enviar Like para Selecionado")
-
-    Tabs.SendLike:AddButton({
-        Title = "Enviar Like para Todos",
-        Callback = function()
-            local sentCount = 0
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer then
-                    SendLike(player)
-                    sentCount = sentCount + 1
-                end
-            end
-            if sentCount > 0 then
-                Fluent:Notify({ Title = "👍 Enviado", Content = "Likes enviados para " .. sentCount .. " jogadores!", Duration = 4 })
-            else
-                Fluent:Notify({ Title = "Erro", Content = "Nenhum jogador disponível!", Duration = 4 })
-            end
-        end
-    })
-    logElement("SendLike", "Button", "Enviar Like para Todos")
-
-    Tabs.SendLike:AddButton({
-        Title = "Enviar Like para Aleatório",
-        Callback = function()
-            local players = GetPlayerNames()
-            if #players > 0 then
-                local randomPlayer = Players:FindFirstChild(players[math.random(1, #players)])
-                if randomPlayer then
-                    SendLike(randomPlayer)
-                else
-                    Fluent:Notify({ Title = "Erro", Content = "Jogador não encontrado!", Duration = 4 })
-                end
-            else
-                Fluent:Notify({ Title = "Erro", Content = "Nenhum jogador disponível!", Duration = 4 })
-            end
-        end
-    })
-    logElement("SendLike", "Button", "Enviar Like para Aleatório")
-end)
-if not success then
-    warn("Error in SendLike tab setup: " .. tostring(err))
 end
 
--- Force refresh of all tabs
-local function refreshTabs()
-    for i = 1, #Tabs do
-        Window:SelectTab(i)
-    end
-    Window:SelectTab(1) -- Return to Main tab
+local debounce = false
+local function UpdateDropdown()
+    if debounce then return end
+    debounce = true
+    Options.PlayerDropdown:SetValues(UpdatePlayerNames())
+    task.wait(1)
+    debounce = false
 end
-task.spawn(function()
-    wait(1) -- Wait for UI to initialize
-    refreshTabs()
-end)
 
--- Update dropdowns dynamically
-Players.PlayerAdded:Connect(function()
-    local names = GetPlayerNames()
-    if Dropdown then
-        Dropdown:SetValues(names)
-    end
-    if Options.SendLikeDropdown then
-        Options.SendLikeDropdown:SetValues(names)
-    end
-end)
+Players.PlayerAdded:Connect(UpdateDropdown)
+Players.PlayerRemoving:Connect(UpdateDropdown)
 
-Players.PlayerRemoving:Connect(function()
-    local names = GetPlayerNames()
-    if Dropdown then
-        Dropdown:SetValues(names)
-    end
-    if Options.SendLikeDropdown then
-        Options.SendLikeDropdown:SetValues(names)
-    end
-end)
-
--- Config Init
 SaveManager:LoadAutoloadConfig()
-
--- Ensure initial tab selection
-Window:SelectTab(1)
 
 Fluent:Notify({
     Title = "✅ Skin Stealer Pro+",
-    Content = "Pronto para clonar com estilo!",
+    Content = "Script carregado com sucesso!",
     Duration = 5
 })
